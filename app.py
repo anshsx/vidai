@@ -16,7 +16,7 @@ CX = "b19cc9f7247b544c0"
 CX_KEY = "AIzaSyB5o1o4jH8-i1XMQJzASfJenBJ7kC3XEPk"
 
 # Google Search API. Free but have rate limits
-SERPER_API = "2df787050a7384fb056bc9a232f6a1a6ff7d04ce"
+SERPER_API = "878b5d783683d5bf2dee3900fec43b3fbbe3bebe"
 GOOGLE_SEARCH_API = "d12402bb42msh61b181a69650f53p1d14e6jsn33dd98c6f779"
 
 # AI Models API call
@@ -502,3 +502,5 @@ def query():
     
     return jsonify(response)
 
+if __name__ == '__main__':
+    app.run(debug=True)
