@@ -396,23 +396,6 @@ def generate_answer(query, contexts):
     except Exception as e:
         print(e)
         return "Failed Response"
-    
-def image_urls(query,num=5):
-    search_url = "https://www.googleapis.com/customsearch/v1"
-    params = { 
-              "q": query,
-              "cx": CX,
-              "key": CX_KEY,
-              "search_type": "image",
-              "num": num
-              }
-    
-    response = requests.get(search_url,params=params)
-    response.raise_for_status()
-    search_results = response.json()
-
-    image_links = [item["link"] for item in search_results.get("items",[])]
-    return image_links
 
 
 
@@ -455,14 +438,12 @@ def main(query, contexts, urls):
     related_questions = get_related_questions(query, contexts)
     
     # Get image URLs
-    image_links = image_urls(query)
     
     # Construct the API response
     response = {
         "Answers": generate_answer(query, contexts),
         "Citations": [f"Citation : {citation} --->  {urls[int(citation)-1]}" for citation in citations],
         "Related Questions": get_related_questions(query, contexts),
-        "Image Links": image_links,
         "Sources": urls
     }
     
