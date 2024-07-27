@@ -155,28 +155,6 @@ def search_with_serper(query: str, subscription_key=SERPER_API, prints=False):
     except KeyError:
         return []
 
-def search_with_google(query: str, subscription_key= GOOGLE_SEARCH_API, cx=CX ):
-    """
-    Search with google and return the contexts.
-    """
-    params = {
-        "key": subscription_key,
-        "cx": cx,
-        "q": query,
-        "num": REFERENCE_COUNT,
-    }
-    response = requests.get(
-        GOOGLE_SEARCH_ENDPOINT, params=params, timeout=DEFAULT_SEARCH_ENGINE_TIMEOUT
-    )
-    if not response.ok:
-        raise HTTPException(response.status_code, "Search engine error.")
-    json_content = response.json()
-    try:
-        contexts = json_content["items"][:REFERENCE_COUNT]
-    except KeyError:
-        return []
-    print(contexts)
-    # return contexts
 def extract_citation_numbers(sentence):
     # Define a regular expression pattern to match citation numbers
     pattern = r'\[citation:(\d+)\]'
