@@ -13,7 +13,7 @@ app = Flask(__name__)
 # When you perform a search using Google's Custom Search Engine (CSE), you can create a custom search engine for your website or application. Google provides an ID (cx) for each custom search engine you create. 
 # This ID is used to uniquely identify your custom search engine when making search requests via the Google Custom Search JSON API.
 CX = "b19cc9f7247b544c0"
-CX_KEY = "AIzaSyB5o1o4jH8-i1XMQJzASfJenBJ7kC3XEPk"
+CX_KEY = "AIzaSyAzCPQB3rMjQ4rgLvGA0D6IM-SaVUNAY3w"
 
 # Google Search API. Free but have rate limits
 SERPER_API = "878b5d783683d5bf2dee3900fec43b3fbbe3bebe"
@@ -155,6 +155,28 @@ def search_with_serper(query: str, subscription_key=SERPER_API, prints=False):
     except KeyError:
         return []
 
+def search_with_google(query: str, subscription_key= GOOGLE_SEARCH_API, cx=CX ):
+    """
+    Search with google and return the contexts.
+    """
+    params = {
+        "key": subscription_key,
+        "cx": cx,
+        "q": query,
+        "num": REFERENCE_COUNT,
+    }
+    response = requests.get(
+        GOOGLE_SEARCH_ENDPOINT, params=params, timeout=DEFAULT_SEARCH_ENGINE_TIMEOUT
+    )
+    if not response.ok:
+        raise HTTPException(response.status_code, "Search engine error.")
+    json_content = response.json()
+    try:
+        contexts = json_content["items"][:REFERENCE_COUNT]
+    except KeyError:
+        return []
+    print(contexts)
+    # return contexts
 def extract_citation_numbers(sentence):
     # Define a regular expression pattern to match citation numbers
     pattern = r'\[citation:(\d+)\]'
@@ -396,6 +418,23 @@ def generate_answer(query, contexts):
     except Exception as e:
         print(e)
         return "Failed Response"
+    
+def image_urls(query,num=5):
+    search_url = "https://www.googleapis.com/customsearch/v1"
+    params = { 
+              "q": query,
+              "cx": CX,
+              "key": CX_KEY,
+              "search_type": "image",
+              "num": num
+              }
+    
+    response = requests.get(search_url,params=params)
+    response.raise_for_status()
+    search_results = response.json()
+
+    image_links = [item["link"] for item in search_results.get("items",[])]
+    return image_links
 
 
 
@@ -438,12 +477,14 @@ def main(query, contexts, urls):
     related_questions = get_related_questions(query, contexts)
     
     # Get image URLs
+    image_links = image_urls(query)
     
     # Construct the API response
     response = {
         "Answers": generate_answer(query, contexts),
         "Citations": [f"Citation : {citation} --->  {urls[int(citation)-1]}" for citation in citations],
         "Related Questions": get_related_questions(query, contexts),
+        "Image Links": image_links,
         "Sources": urls
     }
     
@@ -461,4 +502,5 @@ def query():
     
     return jsonify(response)
 
-
+if __name__ == '__main__':
+    app.run(debug=True)
