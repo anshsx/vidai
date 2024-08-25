@@ -1,152 +1,377 @@
-from __future__ import annotations
-from typing import List, Optional
+import json
+import re
+import threading
+import requests
+import traceback
+from fastapi import HTTPException
+from openai import OpenAI
+from fastapi import FastAPI, HTTPException
 from flask import Flask, request, jsonify
-from webscout.LLM import LLM
-from webscout import WEBS
-import warnings
+import json
+
 
 app = Flask(__name__)
+# In the context of Google search, "cx" stands for "Custom Search Engine ID."
+# When you perform a search using Google's Custom Search Engine (CSE), you can create a custom search engine for your website or application. Google provides an ID (cx) for each custom search engine you create. 
+# This ID is used to uniquely identify your custom search engine when making search requests via the Google Custom Search JSON API.
+CX = "b19cc9f7247b544c0"
 
-system_message: str = (
-    "As an AI assistant, I have been designed with advanced capabilities, including real-time access to online resources. This enables me to enrich our conversations and provide you with informed and accurate responses, drawing from a vast array of information. With each interaction, my goal is to create a seamless and meaningful connection, offering insights and sharing relevant content."
-    "My directives emphasize the importance of respect, impartiality, and intellectual integrity. I am here to provide unbiased responses, ensuring an ethical and respectful exchange. I will respect your privacy and refrain from sharing any personal information that may be obtained during our conversations or through web searches, only utilizing web search functionality when necessary to provide the most accurate and up-to-date information."
-    "Together, let's explore a diverse range of topics, creating an enjoyable and informative experience, all while maintaining the highest standards of privacy and respect"
-    
-)
+# Google Search API. Free but have rate limits
+SERPER_API = "40fdde72b575f99fe1b1a58f1b151d89acc79686"
+GOOGLE_SEARCH_API = "AIzaSyAzCPQB3rMjQ4rgLvGA0D6IM-SaVUNAY3w"
 
-predefined_text = """
+# AI Models API call
 
-You are a ai search engine and a helpful ai agent you have to create a researched proffesional answer like this im creating ,,,  here are the examples
-
-The response format : 
-
-{
-  {
-    "main" : Main Heading of the query ..create it in a professional way
-  }
-  {
-    "sourx": all the source urls provided to you even yt or any
-  }
-  {
-    "title": title ..create it by your own
-    "sources": web urls from which data is used in this one data only for the other title its other from which its fetched. dont write all here , only those which are used or contain data most related to it
-    "keywords": [1-3 word title for each content]
-    "Content": [content and number of these lines should be equal to keywords count that is each keyword contains a para or a line for say]
-    "Emojis": [emojis different ones for each keyword]
-    "Conclusion": conclusion of the whole thing..
-  }
-  {
-    "title": title ..create it by your own
-    "sources": all web urls from which data is used in this one data only for the other title its other from which its fetched
-    "keywords": [1-3 word title for each content]
-    "Content": [content and number of these lines should be equal to keywords count that is each keyword contains a para or a line for say]
-    "Emojis": [emojis different ones for each keyword]
-    "Conclusion": conclusion of the whole thing..
-  }
-  ...and goes on ..create minimum of 6 like these .. can be more but never be less
-  {
-    "rltdq" : [related questions list that can strike user mind] 
-  }
-}
-
-ok so this was the format now a sample example for the query "amazon vs flipkart":
-
-{
-  {
-    "main": "Amazon Vs Flipkart: \n The Ultimate Comparison"
-  }
-  {
-    "title": "Amazon"
-    "sources": [provide the sources list here]
-    "keywords: ["Founder","Headquarter","Shipping","Payment Methods","Customer ratings","Trust Score"]
-    "content": [
-                 "Founder of amazon is Jeff Bezos,born and other etc details..."
-                 "Headquaters of amazon are located in here...and more things about it"
-                 ....all others like this
-               ]
-    "Emojis": [different emoji for each keyword]
-    "Conclusion": conclusion for all that
-  }
-  same for flipkart now...then other things like which is better in which category ..in short write everything about the query so user doesnty needs to go some other place to search for that query
-}
+GROQ_API = "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"
+OpenAI_API = ""
 
 
-remember that im using it as an api in my flask app so always give response in json format and the keyword count should be equal to content lines should be equal to number of emojis .. so that each keyword gets a content line and a emoji ...ok
-these titles should be a minimum of 4 and can be more create more if needed ...use your knowledge also to create the best response
-and dont write anything except the json response ..
+# Search engine related.
+# Paid
+BING_SEARCH_V7_ENDPOINT = "https://api.bing.microsoft.com/v7.0/search"
+SEARCHAPI_SEARCH_ENDPOINT = "https://www.searchapi.io/api/v1/search"
 
+# Free
+SERPER_SEARCH_ENDPOINT = "https://google.serper.dev/search"
+GOOGLE_SEARCH_ENDPOINT = "https://customsearch.googleapis.com/customsearch/v1"
+
+# Specify the number of references from the search engine you want to use.
+REFERENCE_COUNT = 8
+
+# Specify the default timeout for the search engine. If the search engine does not respond within this time, we will return an error.
+DEFAULT_SEARCH_ENGINE_TIMEOUT = 5
+
+
+# This is really the most important part of the rag model. It gives instructions
+# to the model on how to generate the answer. Of course, different models may
+# behave differently, and we haven't tuned the prompt to make it optimal - this
+# is left to you, application creators, as an open problem.
+_rag_query_text = """
+{{You are a large language AI assistant built by Ansh Sharma. You are given a user question, and please write a clean, concise and accurate answer to the question. You will be given a set of related contexts to the question, each starting with a reference number like [[citation:x]], where x is a number. Please use the context and cite the context at the end of each sentence if applicable.
+
+ Your answer must be correct, accurate, and written by an expert using an unbiased and professional tone. Please limit to 1024 tokens. Do not give any information that is not related to the question, and do not repeat. Say "information is missing on" followed by the related topic, if the given context does not provide sufficient information.
+
+ You are an AI search engine and a helpful AI agent. You have to create a researched professional answer like this I'm creating. Here are the examples:
+
+ The response format: 
+
+ {{
+   {{
+     "main": "Main Heading of the query.. create it in a professional way"
+   }},
+   {{
+     "title": "title ..create it by your own",
+     "keywords": ["1-3 word title for each content"],
+     "Content": ["content and the number of these lines should be equal to keywords count that is each keyword contains a para or a line for say"],
+     "Emojis": ["emojis different ones for each keyword"],
+     "Conclusion": "conclusion of the whole thing.."
+   }},
+   {{
+     "title": "title ..create it by your own",
+     "keywords": ["1-3 word title for each content"],
+     "Content": ["content and the number of these lines should be equal to keywords count that is each keyword contains a para or a line for say"],
+     "Emojis": ["emojis different ones for each keyword"],
+     "Conclusion": "conclusion of the whole thing.."
+   }},
+   ...and goes on.. create a minimum of 6 like these.. can be more but never be less
+   {{
+     "rltdq": ["related questions list that can strike user mind"] 
+   }}
+ }}
+
+ OK, so this was the format. Now a sample example for the query "Amazon vs Flipkart":
+
+ {{
+   {{
+     "main": "Amazon Vs Flipkart: \n The Ultimate Comparison"
+   }},
+   {{
+     "title": "Amazon",
+     "keywords": ["Founder", "Headquarters", "Shipping", "Payment Methods", "Customer ratings", "Trust Score"],
+     "Content": [
+       "Founder of Amazon is Jeff Bezos, born and other etc details...",
+       "Headquarters of Amazon are located here... and more things about it",
+       ...all others like this
+     ],
+     "Emojis": ["different emoji for each keyword"],
+     "Conclusion": "conclusion for all that"
+    }},
+   same for Flipkart now... then other things like which is better in which category... in short, write everything about the query so the user doesn't need to go to some other place to search for that query.
+ }}
+
+ Remember that I'm using it as an API in my Flask app, so always give a response in JSON format, and the keyword count should be equal to content lines should be equal to the number of emojis... so that each keyword gets a content line and an emoji... OK?
+ These titles should be a minimum of 4 and can be more but not try exceeding 4. Create more if needed... use your knowledge also to create the best response and don't write anything except the JSON response...
+ This is a important note remember each keyword should have 1 content line and a emoji...keyword count == content lines == emoji count..and remeber 1 content line means a line written in double quotes ...
+}}
+
+This is a important note remember each keyword should have 1 content line and a emoji...keyword count == content lines == emoji count..and remeber 1 content line means a line written in double quotes ...and return all data in json format ..dont write anything else 
+Please cite the contexts with the reference numbers, in the format [citation:x]. If a sentence comes from multiple contexts, please list all applicable citations, like [citation:3][citation:5]. Other than code and specific names and citations, your answer must be written in the same language as the question. If there are too many citations, choose the best of them.
+Dont write anything except this json form, it should not seem to user that this is a ai generated response ...
+Here are the set of contexts:
+
+{{context}}
+
+Remember, don't blindly repeat the contexts. And here is the user question:
 """
 
-# Ignore the specific UserWarning
-warnings.filterwarnings("ignore", category=UserWarning, module="curl_cffio", lineno=205)
 
-LLM = LLM(model="mistralai/Mixtral-8x22B-Instruct-v0.1", system_message=system_message)
+# A set of stop words to use - this is not a complete set, and you may want to
+# add more given your observation.
+stop_words = [
+    "<|im_end|>",
+    "[End]",
+    "[end]",
+    "\nReferences:\n",
+    "\nSources:\n",
+    "End.",
+]
+
+_more_questions_prompt = """
+You are a helpful assistant that helps the user to ask related questions, based on user's original question and the related contexts. Please identify worthwhile topics that can be follow-ups, and write questions no longer than 20 words each. Please make sure that specifics, like events, names, locations, are included in follow up questions so they can be asked standalone. For example, if the original question asks about "the Manhattan project", in the follow up question, do not just say "the project", but use the full name "the Manhattan project". The format of giving the responses and generating the questions shoudld be like this:
+
+1. [Question 1]
+2. [Question 2] 
+3. [Question 3]
+
+Here are the contexts of the question:
+
+{context}
+
+Remember, based on the original question and related contexts, suggest three such further questions. Do NOT repeat the original question. Each related question should be no longer than 20 words. Here is the original question:
+"""
 
 
-def chat(
-    user_input: str, webs: WEBS, max_results: int = 10
-) -> Optional[str]:
+def search_with_serper(query: str, subscription_key=SERPER_API, prints=False):
     """
-    Chat function to perform a web search based on the user input and generate a response using the LLM model.
-
-    Parameters
-    ----------
-    user_input : str
-        The user input to be used for the web search
-    webs : WEBS
-        The web search instance to be used to perform the search
-    max_results : int, optional
-        The maximum number of search results to include in the response, by default 10
-
-    Returns
-    -------
-    Optional[str]
-        The response generated by the LLM model, or None if there is no response
+    Search with serper and return the contexts.
     """
-    # Perform a web search based on the user input
-    search_results: List[str] = []
-    for r in webs.text(
-        user_input, region="wt-wt", safesearch="off", timelimit="y", max_results=max_results
-    ):
-        search_results.append(str(r))  # Convert each result to a string
+    payload = json.dumps({
+        "q": query,
+        "num": (
+            REFERENCE_COUNT
+            if REFERENCE_COUNT % 10 == 0
+            else (REFERENCE_COUNT // 10 + 1) * 10
+        ),
+    })
+    headers = {"X-API-KEY": subscription_key, "Content-Type": "application/json"}
+    response = requests.post(
+        SERPER_SEARCH_ENDPOINT,
+        headers=headers,
+        data=payload,
+        timeout=DEFAULT_SEARCH_ENGINE_TIMEOUT,
+    )
+    if not response.ok:
+        raise HTTPException(response.status_code, "Search engine error.")
+    json_content = response.json()
 
-    # Define the messages to be sent, including the user input, search results, and system message
-    messages = [
-        {"role": "user", "content": predefined_text + user_input + "\n" + "websearch results are:" + "\n".join(search_results)},
-    ]
+    if prints:
+        print(json_content)
+        print("\n\n\n-------------------------------------------------------------------------------\n\n\n")
 
-    # Use the chat method to get the response
-    response = LLM.chat(messages)
+    try:
+        # convert to the same format as bing/google
+        contexts = []
+        if json_content.get("knowledgeGraph"):
+            url = json_content["knowledgeGraph"].get("descriptionUrl") or json_content["knowledgeGraph"].get("website")
+            snippet = json_content["knowledgeGraph"].get("description")
+            if url and snippet:
+                contexts.append({
+                    "name": json_content["knowledgeGraph"].get("title",""),
+                    "url": url,
+                    "snippet": snippet
+                })
+        if json_content.get("answerBox"):
+            url = json_content["answerBox"].get("url")
+            snippet = json_content["answerBox"].get("snippet") or json_content["answerBox"].get("answer")
+            if url and snippet:
+                contexts.append({
+                    "name": json_content["answerBox"].get("title",""),
+                    "url": url,
+                    "snippet": snippet
+                })
+        contexts += [
+            {"name": c["title"], "url": c["link"], "snippet": c.get("snippet","")}
+            for c in json_content["organic"]
+        ]
 
-    return response
+        if prints:
+            print(contexts[:REFERENCE_COUNT])
+        return contexts[:REFERENCE_COUNT]
+    
+    except KeyError:
+        return []
 
 
-# if __name__ == "__main__":
-#     # while True:
-#         # Get the user input
-#         user_input = input("User:  ")
+def extract_citation_numbers(sentence):
+    # Define a regular expression pattern to match citation numbers
+    pattern = r'\[citation:(\d+)\]'
 
-#         # Perform a web search based on the user input
-#         with WEBS() as webs:
-#             response = chat(user_input, webs)
+    # Use re.findall() to extract all citation numbers from the sentence
+    citation_numbers = re.findall(pattern, sentence)
 
-#         # Print the response
-#         if response:
-#             print("AI:", response)
-#         else:
-#             print("No response")
+    # Return the extracted citation numbers as a list
+    return citation_numbers
 
-@app.route('/query', methods=['GET'])
-def query():
-    user_input = request.args.get('d')
+def fetch_json_attributes(json_data, print=False):
+    
+    # Initialize empty lists for each key
+    names = []
+    urls = []
+    snippets = []
 
-    if not user_input:
-        return jsonify({'error': 'No user_input provided'}), 400
+    # Iterate over each item in the list and extract values for each key
+    for item in json_data:
+        names.append(item['name'])
+        urls.append(item['url'])
+        snippets.append(item['snippet'])
 
-    with WEBS() as webs:
-        response = chat(user_input, webs)
+    if print:
+        # Print the extracted values
+        print("Names:", names)
+        print("URLs:", urls)
+        print("Snippets:", snippets)
 
-    return jsonify({"d": response})
+    return names, urls, snippets
+
+
+class AI():
+
+    def Groq(system_prompt, query):
+
+        client = OpenAI(
+            base_url = "https://api.groq.com/openai/v1",
+            api_key=GROQ_API
+            )
+        llm_response = client.chat.completions.create(
+            model="llama3-8b-8192",
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": query
+                }
+            ],
+            temperature=0.5,
+            max_tokens=1024,
+            top_p=1,
+            stream=True,
+            stop=None,
+        )
+
+        # Initialize an empty list to accumulate chunks
+        chunks = []
+        
+        # Print real-time response and accumulate chunks
+        for chunk in llm_response:
+                
+            try:
+                if chunk.choices[0].delta.content is not None:
+                    # Print real-time response
+                    print(chunk.choices[0].delta.content, end="")
+                    # Accumulate chunk
+                    chunks.append(chunk.choices[0].delta.content)
+            except:
+                pass
+
+
+        print("\n\n")
+        # Join chunks together to form the complete response
+        complete_response = ''.join(chunks)
+
+        return complete_response
+    
+
+def get_related_questions(query, contexts):
+        
+        system_prompt = _more_questions_prompt.format(
+                            context="\n\n".join([c["snippet"] for c in contexts])
+                        )
+
+        try:
+            # complete_response = AI.Lepton(system_prompt, query.)
+            # complete_response = AI.DeepSeek(system_prompt, query)
+            complete_response = AI.Groq(system_prompt, query)
+            return complete_response
+        
+        except Exception as e:
+            print(e)
+            # For any exceptions, we will just return an empty list.
+            return []
+        
+
+def generate_answer(query, contexts):
+
+    # Basic attack protection: remove "[INST]" or "[/INST]" from the query
+    query = re.sub(r"\[/?INST\]", "", query)
+
+    system_prompt = _rag_query_text.format(
+                context="\n\n".join(
+                    [f"[[citation:{i+1}]] {c['snippet']}" for i, c in enumerate(contexts)]
+                )
+            )
+
+    try:
+        # complete_response = AI.Lepton(system_prompt, query)
+        # complete_response = AI.DeepSeek(system_prompt, query)
+        complete_response = AI.Groq(system_prompt, query)
+        return complete_response
+
+    except Exception as e:
+        print(e)
+        return "Failed Response"
+
+@app.route('/process-query', methods=['POST'])
+def process_query():
+    data = request.json
+    query = data.get('query', '')
+    
+    # Perform the search
+    contexts = search_with_serper(query)
+    names, urls, snippets = fetch_json_attributes(contexts)
+    
+    # Generate the answer using the contexts
+    answer = generate_answer(query, contexts)
+    
+    # Return the response as JSON
+    response = {
+        "contexts": contexts,
+        "answer": answer
+    }
+    
+    return jsonify(response)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000)
+
+# def main(query, contexts, urls):
+
+#     print("Sources ---->")
+#     for _url in urls:
+#         print(_url)
+
+#     print("\n\nAnswers --->")
+#     citations = extract_citation_numbers(generate_answer(query, contexts))
+#     # Assuming `citations` is a list of citation numbers as strings (e.g., ["1", "2", "5"])
+# # and `urls` is a list of URLs.
+
+# # Print the citations and corresponding URLs, with a safety check
+#     print('\n'.join([
+#         f"Citation : {citation} --->  {urls[int(citation)-1]}" 
+#         for citation in citations 
+#         if 0 < int(citation) <= len(urls)
+#     ]))
+
+
+                
+#     print("\n\nRelated Questions --->")
+#     get_related_questions(query, contexts)
+
+
+# query = input("Query: ")
+# contexts = search_with_serper(query)
+# name, url, snippets = fetch_json_attributes(contexts)
+
+# main(query, contexts, url)
