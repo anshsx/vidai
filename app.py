@@ -1,3 +1,6 @@
+# Groq Llama 2 Model API integrated for generating answers based on contexts
+# Search, fetch related contexts and generate related questions and answers using the Llama model API.
+
 import json
 import re
 import threading
@@ -9,43 +12,27 @@ from fastapi import FastAPI, HTTPException
 from flask import Flask, request, jsonify
 import json
 
-
 app = Flask(__name__)
-# In the context of Google search, "cx" stands for "Custom Search Engine ID."
-# When you perform a search using Google's Custom Search Engine (CSE), you can create a custom search engine for your website or application. Google provides an ID (cx) for each custom search engine you create. 
-# This ID is used to uniquely identify your custom search engine when making search requests via the Google Custom Search JSON API.
-CX = "b19cc9f7247b544c0"
 
-# Google Search API. Free but have rate limits
+# Constants for Google Search APIs
+CX = "b19cc9f7247b544c0"
 SERPER_API = "40fdde72b575f99fe1b1a58f1b151d89acc79686"
 GOOGLE_SEARCH_API = "AIzaSyAzCPQB3rMjQ4rgLvGA0D6IM-SaVUNAY3w"
 
-# AI Models API call
-
+# AI Model API key
 GROQ_API = "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"
-OpenAI_API = ""
 
-
-# Search engine related.
-# Paid
+# Search API Endpoints
 BING_SEARCH_V7_ENDPOINT = "https://api.bing.microsoft.com/v7.0/search"
 SEARCHAPI_SEARCH_ENDPOINT = "https://www.searchapi.io/api/v1/search"
-
-# Free
 SERPER_SEARCH_ENDPOINT = "https://google.serper.dev/search"
 GOOGLE_SEARCH_ENDPOINT = "https://customsearch.googleapis.com/customsearch/v1"
 
-# Specify the number of references from the search engine you want to use.
+# Settings
 REFERENCE_COUNT = 8
-
-# Specify the default timeout for the search engine. If the search engine does not respond within this time, we will return an error.
 DEFAULT_SEARCH_ENGINE_TIMEOUT = 5
 
-
-# This is really the most important part of the rag model. It gives instructions
-# to the model on how to generate the answer. Of course, different models may
-# behave differently, and we haven't tuned the prompt to make it optimal - this
-# is left to you, application creators, as an open problem.
+# Template for generating answers using contexts
 _rag_query_text = """
 {{You are a large language AI assistant built by Ansh Sharma. You are given a user question, and please write a clean, concise and accurate answer to the question. You will be given a set of related contexts to the question, each starting with a reference number like [[citation:x]], where x is a number. Please use the context and cite the context at the end of each sentence if applicable.
 
@@ -101,12 +88,12 @@ _rag_query_text = """
 
  Remember that I'm using it as an API in my Flask app, so always give a response in JSON format, and the keyword count should be equal to content lines should be equal to the number of emojis... so that each keyword gets a content line and an emoji... OK?
  These titles should be a minimum of 4 and can be more but not try exceeding 4. Create more if needed... use your knowledge also to create the best response and don't write anything except the JSON response...
- This is a important note remember each keyword should have 1 content line and a emoji...keyword count == content lines == emoji count..and remeber 1 content line means a line written in double quotes ...
+ This is an important note remember each keyword should have 1 content line and a emoji...keyword count == content lines == emoji count..and remeber 1 content line means a line written in double quotes ...
 }}
 
-This is a important note remember each keyword should have 1 content line and a emoji...keyword count == content lines == emoji count..and remeber 1 content line means a line written in double quotes ...and return all data in json format ..dont write anything else 
+This is an important note remember each keyword should have 1 content line and a emoji...keyword count == content lines == emoji count..and return all data in json format ..dont write anything else 
 Please cite the contexts with the reference numbers, in the format [citation:x]. If a sentence comes from multiple contexts, please list all applicable citations, like [citation:3][citation:5]. Other than code and specific names and citations, your answer must be written in the same language as the question. If there are too many citations, choose the best of them.
-Dont write anything except this json form, it should not seem to user that this is a ai generated response ...
+Dont write anything except this json form, it should not seem to user that this is an ai generated response ...
 Here are the set of contexts:
 
 {{context}}
@@ -115,8 +102,7 @@ Remember, don't blindly repeat the contexts. And here is the user question:
 """
 
 
-# A set of stop words to use - this is not a complete set, and you may want to
-# add more given your observation.
+# Stop words list
 stop_words = [
     "<|im_end|>",
     "[End]",
@@ -126,8 +112,9 @@ stop_words = [
     "End.",
 ]
 
+# Follow-up questions prompt
 _more_questions_prompt = """
-You are a helpful assistant that helps the user to ask related questions, based on user's original question and the related contexts. Please identify worthwhile topics that can be follow-ups, and write questions no longer than 20 words each. Please make sure that specifics, like events, names, locations, are included in follow up questions so they can be asked standalone. For example, if the original question asks about "the Manhattan project", in the follow up question, do not just say "the project", but use the full name "the Manhattan project". The format of giving the responses and generating the questions shoudld be like this:
+You are a helpful assistant that helps the user to ask related questions, based on user's original question and the related contexts. Please identify worthwhile topics that can be follow-ups, and write questions no longer than 20 words each. Please make sure that specifics, like events, names, locations, are included in follow-up questions so they can be asked standalone. For example, if the original question asks about "the Manhattan project", in the follow-up question, do not just say "the project", but use the full name "the Manhattan project". The format of giving the responses and generating the questions should be like this:
 
 1. [Question 1]
 2. [Question 2] 
@@ -140,11 +127,8 @@ Here are the contexts of the question:
 Remember, based on the original question and related contexts, suggest three such further questions. Do NOT repeat the original question. Each related question should be no longer than 20 words. Here is the original question:
 """
 
-
+# Function to perform search using Serper API
 def search_with_serper(query: str, subscription_key=SERPER_API, prints=False):
-    """
-    Search with serper and return the contexts.
-    """
     payload = json.dumps({
         "q": query,
         "num": (
@@ -169,14 +153,13 @@ def search_with_serper(query: str, subscription_key=SERPER_API, prints=False):
         print("\n\n\n-------------------------------------------------------------------------------\n\n\n")
 
     try:
-        # convert to the same format as bing/google
         contexts = []
         if json_content.get("knowledgeGraph"):
             url = json_content["knowledgeGraph"].get("descriptionUrl") or json_content["knowledgeGraph"].get("website")
             snippet = json_content["knowledgeGraph"].get("description")
             if url and snippet:
                 contexts.append({
-                    "name": json_content["knowledgeGraph"].get("title",""),
+                    "name": json_content["knowledgeGraph"].get("title", ""),
                     "url": url,
                     "snippet": snippet
                 })
@@ -185,12 +168,12 @@ def search_with_serper(query: str, subscription_key=SERPER_API, prints=False):
             snippet = json_content["answerBox"].get("snippet") or json_content["answerBox"].get("answer")
             if url and snippet:
                 contexts.append({
-                    "name": json_content["answerBox"].get("title",""),
+                    "name": json_content["answerBox"].get("title", ""),
                     "url": url,
                     "snippet": snippet
                 })
         contexts += [
-            {"name": c["title"], "url": c["link"], "snippet": c.get("snippet","")}
+            {"name": c["title"], "url": c["link"], "snippet": c.get("snippet", "")}
             for c in json_content["organic"]
         ]
 
@@ -201,177 +184,117 @@ def search_with_serper(query: str, subscription_key=SERPER_API, prints=False):
     except KeyError:
         return []
 
-
+# Function to extract citation numbers
 def extract_citation_numbers(sentence):
-    # Define a regular expression pattern to match citation numbers
-    pattern = r'\[citation:(\d+)\]'
-
-    # Use re.findall() to extract all citation numbers from the sentence
+    pattern = r'citation:(\d+)'
     citation_numbers = re.findall(pattern, sentence)
-
-    # Return the extracted citation numbers as a list
     return citation_numbers
 
+# Function to fetch attributes from JSON data
 def fetch_json_attributes(json_data, print=False):
-    
-    # Initialize empty lists for each key
     names = []
     urls = []
     snippets = []
-
-    # Iterate over each item in the list and extract values for each key
     for item in json_data:
         names.append(item['name'])
         urls.append(item['url'])
         snippets.append(item['snippet'])
-
-    if print:
-        # Print the extracted values
-        print("Names:", names)
-        print("URLs:", urls)
-        print("Snippets:", snippets)
-
+        if print:
+            print(f"Name: {item['name']}")
+            print(f"URL: {item['url']}")
+            print(f"Snippet: {item['snippet']}")
+            print("\n-------------------------------\n")
     return names, urls, snippets
 
+# Function to clean text by removing stop words
+def clean_text(text, stop_words_list=stop_words):
+    for stop_word in stop_words_list:
+        text = text.replace(stop_word, "")
+    return text.strip()
 
-class AI():
-
-    def Groq(system_prompt, query):
-
-        client = OpenAI(
-            base_url = "https://api.groq.com/openai/v1",
-            api_key=GROQ_API
-            )
-        llm_response = client.chat.completions.create(
-            model="llama3-8b-8192",
-            messages=[
-                {
-                    "role": "system",
-                    "content": system_prompt
-                },
-                {
-                    "role": "user",
-                    "content": query
-                }
-            ],
-            temperature=0.5,
-            max_tokens=1024,
-            top_p=1,
-            stream=True,
-            stop=None,
-        )
-
-        # Initialize an empty list to accumulate chunks
-        chunks = []
-        
-        # Print real-time response and accumulate chunks
-        for chunk in llm_response:
-                
-            try:
-                if chunk.choices[0].delta.content is not None:
-                    # Print real-time response
-                    print(chunk.choices[0].delta.content, end="")
-                    # Accumulate chunk
-                    chunks.append(chunk.choices[0].delta.content)
-            except:
-                pass
-
-
-        print("\n\n")
-        # Join chunks together to form the complete response
-        complete_response = ''.join(chunks)
-
-        return complete_response
-    
-
-def get_related_questions(query, contexts):
-        
-        system_prompt = _more_questions_prompt.format(
-                            context="\n\n".join([c["snippet"] for c in contexts])
-                        )
-
-        try:
-            # complete_response = AI.Lepton(system_prompt, query.)
-            # complete_response = AI.DeepSeek(system_prompt, query)
-            complete_response = AI.Groq(system_prompt, query)
-            return complete_response
-        
-        except Exception as e:
-            print(e)
-            # For any exceptions, we will just return an empty list.
-            return []
-        
-
-def generate_answer(query, contexts):
-
-    # Basic attack protection: remove "[INST]" or "[/INST]" from the query
-    query = re.sub(r"\[/?INST\]", "", query)
-
-    system_prompt = _rag_query_text.format(
-                context="\n\n".join(
-                    [f"[[citation:{i+1}]] {c['snippet']}" for i, c in enumerate(contexts)]
-                )
-            )
-
-    try:
-        # complete_response = AI.Lepton(system_prompt, query)
-        # complete_response = AI.DeepSeek(system_prompt, query)
-        complete_response = AI.Groq(system_prompt, query)
-        return complete_response
-
-    except Exception as e:
-        print(e)
-        return "Failed Response"
-
-@app.route('/process-query', methods=['POST'])
-def process_query():
-    data = request.json
-    query = data.get('query', '')
-    
-    # Perform the search
-    contexts = search_with_serper(query)
-    names, urls, snippets = fetch_json_attributes(contexts)
-    
-    # Generate the answer using the contexts
-    answer = generate_answer(query, contexts)
-    
-    # Return the response as JSON
-    response = {
-        "contexts": contexts,
-        "answer": answer
+# Function to call the Llama 2 model for generating answers based on contexts
+def query_llama_2_with_contexts(query, contexts, model_api_key=GROQ_API):
+    headers = {
+        "Authorization": f"Bearer {model_api_key}",
+        "Content-Type": "application/json"
     }
-    
-    return jsonify(response)
+    payload = json.dumps({
+        "query": query,
+        "contexts": contexts
+    })
+    try:
+        response = requests.post("https://llama2.model.api/ask", headers=headers, data=payload, timeout=30)
+        if response.status_code == 200:
+            result = response.json()
+            return result['answer']  # Return the AI-generated answer
+        else:
+            raise HTTPException(status_code=response.status_code, detail="Llama 2 API error.")
+    except requests.exceptions.RequestException as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Request to Llama 2 API failed.")
 
+# Function to generate follow-up questions based on contexts
+def generate_followup_questions(original_question, contexts, model_api_key=GROQ_API):
+    headers = {
+        "Authorization": f"Bearer {model_api_key}",
+        "Content-Type": "application/json"
+    }
+    followup_prompt = _more_questions_prompt.format(context=contexts)
+    payload = json.dumps({
+        "prompt": followup_prompt,
+        "max_tokens": 100
+    })
+    try:
+        response = requests.post("https://llama2.model.api/generate", headers=headers, data=payload, timeout=30)
+        if response.status_code == 200:
+            result = response.json()
+            return result['questions']  # Return the list of follow-up questions
+        else:
+            raise HTTPException(status_code=response.status_code, detail="Llama 2 API error during follow-up generation.")
+    except requests.exceptions.RequestException as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Request to Llama 2 API failed.")
+
+# Flask route to handle search and answer generation
+@app.route('/search-and-answer', methods=['POST'])
+def search_and_answer():
+    try:
+        data = request.json
+        user_query = data.get('query')
+        if not user_query:
+            raise HTTPException(status_code=400, detail="Query is required.")
+        
+        # Perform search using Serper API
+        search_results = search_with_serper(user_query)
+        if not search_results:
+            raise HTTPException(status_code=404, detail="No search results found.")
+
+        # Extract names, urls, and snippets from search results
+        names, urls, snippets = fetch_json_attributes(search_results)
+        
+        # Clean up and compile the snippets for context generation
+        contexts = "\n".join([clean_text(snippet) for snippet in snippets])
+
+        # Generate an answer using Llama 2 based on the search contexts
+        answer = query_llama_2_with_contexts(user_query, contexts)
+
+        # Generate follow-up questions based on the context
+        followup_questions = generate_followup_questions(user_query, contexts)
+
+        # Return a response with the answer and follow-up questions
+        response = {
+            "answer": answer,
+            "follow_up_questions": followup_questions,
+            "sources": [{"name": name, "url": url} for name, url in zip(names, urls)]
+        }
+        return jsonify(response)
+
+    except HTTPException as e:
+        return jsonify({"error": str(e.detail)}), e.status_code
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": "An unexpected error occurred."}), 500
+
+# Running the Flask app
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
-
-# def main(query, contexts, urls):
-
-#     print("Sources ---->")
-#     for _url in urls:
-#         print(_url)
-
-#     print("\n\nAnswers --->")
-#     citations = extract_citation_numbers(generate_answer(query, contexts))
-#     # Assuming `citations` is a list of citation numbers as strings (e.g., ["1", "2", "5"])
-# # and `urls` is a list of URLs.
-
-# # Print the citations and corresponding URLs, with a safety check
-#     print('\n'.join([
-#         f"Citation : {citation} --->  {urls[int(citation)-1]}" 
-#         for citation in citations 
-#         if 0 < int(citation) <= len(urls)
-#     ]))
-
-
-                
-#     print("\n\nRelated Questions --->")
-#     get_related_questions(query, contexts)
-
-
-# query = input("Query: ")
-# contexts = search_with_serper(query)
-# name, url, snippets = fetch_json_attributes(contexts)
-
-# main(query, contexts, url)
+    app.run(debug=True)
