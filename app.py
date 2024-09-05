@@ -107,6 +107,98 @@ Here are the contexts of the question:
 Remember, based on the original question and related contexts, suggest three such further questions. Do NOT repeat the original question. Each related question should be no longer than 20 words. Here is the original question:
 """
 
+def search_with_serper(query: str, subscription_key=SERPER_API, prints=False):
+    """
+    Search with serper and return the contexts.
+    """
+    payload = json.dumps({
+        "q": query,
+        "num": (
+            REFERENCE_COUNT
+            if REFERENCE_COUNT % 10 == 0
+            else (REFERENCE_COUNT // 10 + 1) * 10
+        ),
+    })
+    headers = {"X-API-KEY": subscription_key, "Content-Type": "application/json"}
+    response = requests.post(
+        SERPER_SEARCH_ENDPOINT,
+        headers=headers,
+        data=payload,
+        timeout=DEFAULT_SEARCH_ENGINE_TIMEOUT,
+    )
+    if not response.ok:
+        raise HTTPException(response.status_code, "Search engine error.")
+    json_content = response.json()
+
+    if prints:
+        print(json_content)
+        print("\n\n\n-------------------------------------------------------------------------------\n\n\n")
+
+    try:
+        # convert to the same format as bing/google
+        contexts = []
+        if json_content.get("knowledgeGraph"):
+            url = json_content["knowledgeGraph"].get("descriptionUrl") or json_content["knowledgeGraph"].get("website")
+            snippet = json_content["knowledgeGraph"].get("description")
+            if url and snippet:
+                contexts.append({
+                    "name": json_content["knowledgeGraph"].get("title",""),
+                    "url": url,
+                    "snippet": snippet
+                })
+        if json_content.get("answerBox"):
+            url = json_content["answerBox"].get("url")
+            snippet = json_content["answerBox"].get("snippet") or json_content["answerBox"].get("answer")
+            if url and snippet:
+                contexts.append({
+                    "name": json_content["answerBox"].get("title",""),
+                    "url": url,
+                    "snippet": snippet
+                })
+        contexts += [
+            {"name": c["title"], "url": c["link"], "snippet": c.get("snippet","")}
+            for c in json_content["organic"]
+        ]
+
+        if prints:
+            print(contexts[:REFERENCE_COUNT])
+        return contexts[:REFERENCE_COUNT]
+    
+    except KeyError:
+        return []
+
+
+def extract_citation_numbers(sentence):
+    # Define a regular expression pattern to match citation numbers
+    pattern = r'\[citation:(\d+)\]'
+
+    # Use re.findall() to extract all citation numbers from the sentence
+    citation_numbers = re.findall(pattern, sentence)
+
+    # Return the extracted citation numbers as a list
+    return citation_numbers
+
+def fetch_json_attributes(json_data, print=False):
+    
+    # Initialize empty lists for each key
+    names = []
+    urls = []
+    snippets = []
+
+    # Iterate over each item in the list and extract values for each key
+    for item in json_data:
+        names.append(item['name'])
+        urls.append(item['url'])
+        snippets.append(item['snippet'])
+
+    if print:
+        # Print the extracted values
+        print("Names:", names)
+        print("URLs:", urls)
+        print("Snippets:", snippets)
+
+    return names, urls, snippets
+
 def query_llama_2_with_contexts(query, contexts):
     headers = {
         "Authorization": f"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",
