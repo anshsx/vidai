@@ -1,30 +1,51 @@
 import json
 import re
+import threading
 import requests
 import traceback
 from fastapi import HTTPException
 from openai import OpenAI
+from fastapi import FastAPI, HTTPException
 from flask import Flask, request, jsonify
+import json
+
 
 app = Flask(__name__)
-
 # In the context of Google search, "cx" stands for "Custom Search Engine ID."
+# When you perform a search using Google's Custom Search Engine (CSE), you can create a custom search engine for your website or application. Google provides an ID (cx) for each custom search engine you create. 
+# This ID is used to uniquely identify your custom search engine when making search requests via the Google Custom Search JSON API.
 CX = "b19cc9f7247b544c0"
+
+# Google Search API. Free but have rate limits
 SERPER_API = "40fdde72b575f99fe1b1a58f1b151d89acc79686"
 GOOGLE_SEARCH_API = "AIzaSyAzCPQB3rMjQ4rgLvGA0D6IM-SaVUNAY3w"
+
+# AI Models API call
+
 GROQ_API = "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"
 OpenAI_API = ""
 
-# Search engine related endpoints
+
+# Search engine related.
+# Paid
 BING_SEARCH_V7_ENDPOINT = "https://api.bing.microsoft.com/v7.0/search"
 SEARCHAPI_SEARCH_ENDPOINT = "https://www.searchapi.io/api/v1/search"
+
+# Free
 SERPER_SEARCH_ENDPOINT = "https://google.serper.dev/search"
 GOOGLE_SEARCH_ENDPOINT = "https://customsearch.googleapis.com/customsearch/v1"
 
+# Specify the number of references from the search engine you want to use.
 REFERENCE_COUNT = 8
+
+# Specify the default timeout for the search engine. If the search engine does not respond within this time, we will return an error.
 DEFAULT_SEARCH_ENGINE_TIMEOUT = 5
 
-# System prompts
+
+# This is really the most important part of the rag model. It gives instructions
+# to the model on how to generate the answer. Of course, different models may
+# behave differently, and we haven't tuned the prompt to make it optimal - this
+# is left to you, application creators, as an open problem.
 _rag_query_text = """
 {{You are a large language AI assistant built by Ansh Sharma. You are given a user question, and please write a clean, concise and accurate answer to the question. You will be given a set of related contexts to the question, each starting with a reference number like [[citation:x]], where x is a number. Please use the context and cite the context at the end of each sentence if applicable.
 
@@ -93,6 +114,18 @@ Here are the set of contexts:
 Remember, don't blindly repeat the contexts. And here is the user question:
 """
 
+
+# A set of stop words to use - this is not a complete set, and you may want to
+# add more given your observation.
+stop_words = [
+    "<|im_end|>",
+    "[End]",
+    "[end]",
+    "\nReferences:\n",
+    "\nSources:\n",
+    "End.",
+]
+
 _more_questions_prompt = """
 You are a helpful assistant that helps the user to ask related questions, based on user's original question and the related contexts. Please identify worthwhile topics that can be follow-ups, and write questions no longer than 20 words each. Please make sure that specifics, like events, names, locations, are included in follow up questions so they can be asked standalone. For example, if the original question asks about "the Manhattan project", in the follow up question, do not just say "the project", but use the full name "the Manhattan project". The format of giving the responses and generating the questions shoudld be like this:
 
@@ -106,6 +139,7 @@ Here are the contexts of the question:
 
 Remember, based on the original question and related contexts, suggest three such further questions. Do NOT repeat the original question. Each related question should be no longer than 20 words. Here is the original question:
 """
+
 
 def search_with_serper(query: str, subscription_key=SERPER_API, prints=False):
     """
@@ -199,62 +233,90 @@ def fetch_json_attributes(json_data, print=False):
 
     return names, urls, snippets
 
-def query_llama_2_with_contexts(query, contexts):
-    headers = {
-        "Authorization": f"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",
-        "Content-Type": "application/json"
-    }
-    
-    payload = json.dumps({
-        "inputs": f"Query: {query}\n\nContexts:\n{contexts}",
-        "parameters": {
-            "max_new_tokens": 1024,  # Adjust as necessary
-            "temperature": 0.5  # Adjust creativity level
-        }
-    })
-    
-    try:
-        response = requests.post(
-            "https://api-inference.huggingface.co/models/meta-llama/Llama-2-7b-chat-hf",
-            headers=headers,
-            data=payload,
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            return result[0]['generated_text']  # Modify based on actual response structure
-        else:
-            raise HTTPException(status_code=response.status_code, detail="Hugging Face Llama 2 API error.")
-    
-    except requests.exceptions.RequestException as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail="Request to Hugging Face API failed.")
 
-def get_related_questions(query, contexts):
-    system_prompt = _more_questions_prompt.format(
-        context="\n\n".join([c["snippet"] for c in contexts])
-    )
-    
-    try:
-        complete_response = query_llama_2_with_contexts(system_prompt, query)
+class AI():
+
+    def Groq(system_prompt, query):
+
+        client = OpenAI(
+            base_url = "https://api.groq.com/openai/v1",
+            api_key=GROQ_API
+            )
+        llm_response = client.chat.completions.create(
+            model="llama3-8b-8192",
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": query
+                }
+            ],
+            temperature=0.5,
+            max_tokens=1024,
+            top_p=1,
+            stream=True,
+            stop=None,
+        )
+
+        # Initialize an empty list to accumulate chunks
+        chunks = []
+        
+        # Print real-time response and accumulate chunks
+        for chunk in llm_response:
+                
+            try:
+                if chunk.choices[0].delta.content is not None:
+                    # Print real-time response
+                    print(chunk.choices[0].delta.content, end="")
+                    # Accumulate chunk
+                    chunks.append(chunk.choices[0].delta.content)
+            except:
+                pass
+
+
+        print("\n\n")
+        # Join chunks together to form the complete response
+        complete_response = ''.join(chunks)
+
         return complete_response
     
-    except Exception as e:
-        print(e)
-        return []
+
+def get_related_questions(query, contexts):
+        
+        system_prompt = _more_questions_prompt.format(
+                            context="\n\n".join([c["snippet"] for c in contexts])
+                        )
+
+        try:
+            # complete_response = AI.Lepton(system_prompt, query.)
+            # complete_response = AI.DeepSeek(system_prompt, query)
+            complete_response = AI.Groq(system_prompt, query)
+            return complete_response
+        
+        except Exception as e:
+            print(e)
+            # For any exceptions, we will just return an empty list.
+            return []
+        
 
 def generate_answer(query, contexts):
-    query = re.sub(r"/?INST", "", query)
+
+    # Basic attack protection: remove "[INST]" or "[/INST]" from the query
+    query = re.sub(r"\[/?INST\]", "", query)
 
     system_prompt = _rag_query_text.format(
-        context="\n\n".join(
-            [f"[[citation:{i+1}]] {c['snippet']}" for i, c in enumerate(contexts)]
-        )
-    )
+                context="\n\n".join(
+                    [f"[[citation:{i+1}]] {c['snippet']}" for i, c in enumerate(contexts)]
+                )
+            )
 
     try:
-        complete_response = query_llama_2_with_contexts(system_prompt, query)
+        # complete_response = AI.Lepton(system_prompt, query)
+        # complete_response = AI.DeepSeek(system_prompt, query)
+        complete_response = AI.Groq(system_prompt, query)
         return complete_response
 
     except Exception as e:
@@ -268,21 +330,48 @@ def process_query():
     
     # Perform the search
     contexts = search_with_serper(query)
+    names, urls, snippets = fetch_json_attributes(contexts)
     
     # Generate the answer using the contexts
     answer = generate_answer(query, contexts)
     
-    # Generate related questions
-    related_questions = get_related_questions(query, contexts)
-    
     # Return the response as JSON
     response = {
         "contexts": contexts,
-        "answer": answer,
-        "related_questions": related_questions
+        "answer": answer
     }
     
     return jsonify(response)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
+# def main(query, contexts, urls):
+
+#     print("Sources ---->")
+#     for _url in urls:
+#         print(_url)
+
+#     print("\n\nAnswers --->")
+#     citations = extract_citation_numbers(generate_answer(query, contexts))
+#     # Assuming `citations` is a list of citation numbers as strings (e.g., ["1", "2", "5"])
+# # and `urls` is a list of URLs.
+
+# # Print the citations and corresponding URLs, with a safety check
+#     print('\n'.join([
+#         f"Citation : {citation} --->  {urls[int(citation)-1]}" 
+#         for citation in citations 
+#         if 0 < int(citation) <= len(urls)
+#     ]))
+
+
+                
+#     print("\n\nRelated Questions --->")
+#     get_related_questions(query, contexts)
+
+
+# query = input("Query: ")
+# contexts = search_with_serper(query)
+# name, url, snippets = fetch_json_attributes(contexts)
+
+# main(query, contexts, url)......bro thid rsg query text and more question prompt don't change and integrate the update in this 
