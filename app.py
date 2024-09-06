@@ -49,7 +49,7 @@ DEFAULT_SEARCH_ENGINE_TIMEOUT = 5
 _rag_query_text = """
 You are an AI search engine and a helpful AI agent. You have to create a researched professional answer like this I'm creating. Here are the examples:
 
- The response format: 
+ The response format... important note this is the final format for response and always use this format because i have already set it in fluter: 
 
  {{
    {{
@@ -95,13 +95,9 @@ You are an AI search engine and a helpful AI agent. You have to create a researc
    same for Flipkart now... then other things like which is better in which category... in short, write everything about the query so the user doesn't need to go to some other place to search for that query.
  }}
 
- Remember that I'm using it as an API in my Flask app, so always give a response in JSON format, and the keyword count should be equal to content lines should be equal to the number of emojis... so that each keyword gets a content line and an emoji... OK?
- These titles should be a minimum of 4 and can be more but not try exceeding 4. Create more if needed... use your knowledge also to create the best response and don't write anything except the JSON response...
+ Remember that I'm using it as an API in my Flask app, so always give a response in JSON format, and the keyword count should be equal to content lines should be equal to the number of emojis... so that each keyword gets a content line and an emoji..
  This is a important note remember each keyword should have 1 content line and a emoji...keyword count == content lines == emoji count..and remeber 1 content line means a line written in double quotes ...
 }}
-
-This is a important note remember each keyword should have 1 content line and a emoji...keyword count == content lines == emoji count..and remeber 1 content line means a line written in double quotes ...and return all data in json format ..dont write anything else 
-Dont write anything except this json form, it should not seem to user that this is a ai generated response ...
 Here are the set of contexts:
 
 {{context}}
