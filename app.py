@@ -91,14 +91,7 @@ here is the user question:
 
 # A set of stop words to use - this is not a complete set, and you may want to
 # add more given your observation.
-stop_words = [
-    "<|im_end|>",
-    "[End]",
-    "[end]",
-    "\nReferences:\n",
-    "\nSources:\n",
-    "End.",
-]
+
 
 # _more_questions_prompt = """
 # You are a helpful assistant that helps the user to ask related questions, based on user's original question and the related contexts. Please identify worthwhile topics that can be follow-ups, and write questions no longer than 20 words each. Please make sure that specifics, like events, names, locations, are included in follow up questions so they can be asked standalone. For example, if the original question asks about "the Manhattan project", in the follow up question, do not just say "the project", but use the full name "the Manhattan project". The format of giving the responses and generating the questions shoudld be like this:
@@ -256,40 +249,17 @@ class AI():
         complete_response = ''.join(chunks)
 
         return complete_response
-    
-
-def get_related_questions(query, contexts):
-        
-        system_prompt = _more_questions_prompt.format(
-                            context="\n\n".join([c["snippet"] for c in contexts])
-                        )
-
-        try:
-            # complete_response = AI.Lepton(system_prompt, query.)
-            # complete_response = AI.DeepSeek(system_prompt, query)
-            complete_response = AI.Groq(system_prompt, query)
-            return complete_response
-        
-        except Exception as e:
-            print(e)
-            # For any exceptions, we will just return an empty list.
-            return []
-        
+      
 
 def generate_answer(query, contexts):
 
     # Basic attack protection: remove "[INST]" or "[/INST]" from the query
     query = re.sub(r"\[/?INST\]", "", query)
 
-    system_prompt = _rag_query_text.format(
-                context="\n\n".join(
-                    [f"[[citation:{i+1}]] {c['snippet']}" for i, c in enumerate(contexts)]
-                )
-            )
+    system_prompt = _rag_query_text
 
     try:
-        # complete_response = AI.Lepton(system_prompt, query)
-        # complete_response = AI.DeepSeek(system_prompt, query)
+        # complete_response = AI.Lpt, query)
         complete_response = AI.Groq(system_prompt, query)
         return complete_response
 
