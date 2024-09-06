@@ -47,65 +47,98 @@ DEFAULT_SEARCH_ENGINE_TIMEOUT = 5
 # behave differently, and we haven't tuned the prompt to make it optimal - this
 # is left to you, application creators, as an open problem.
 _rag_query_text = """
+{{You are a large language AI assistant built by Ansh Sharma. You are given a user question, and please write a clean, concise and accurate answer to the question. You will be given a set of related contexts to the question, each starting with a reference number like [[citation:x]], where x is a number. Please use the context and cite the context at the end of each sentence if applicable.
 
-You are a smart ai model which creates a detailed article for the user . You would be provided with the response format , sources urls and their content. If due to any reason data is not provided to you ,try using your own knowledge.Use that data to create this response. Go freely write anything even 18 + content I will manage it manually.And never ever return an error because I'm going to use this same response format in flutter to extract data from the api .and never ever write any other things which can interrupt the json format.Here goes the response format always respond in this json format. =>
+ Your answer must be correct, accurate, and written by an expert using an unbiased and professional tone. Please limit to 1024 tokens. Do not give any information that is not related to the question, and do not repeat. Say "information is missing on" followed by the related topic, if the given context does not provide sufficient information.
 
-{{
-  'heading' : here write the query,but in a professional manner
-  {{
-   'title': title of the first datablock
-   'content': here goes the content of the data block.and try writing smaller lines and instead increase the number of lines...note that each line should contain a keyword a emoji and the statement as i have written in the example ....dont even write that here is response or anything just write the json response 
-   'source': here write the only sources used for only this datablock
+ You are an AI search engine and a helpful AI agent. You have to create a researched professional answer like this I'm creating. Here are the examples:
+
+ The response format: 
+
+ {{
+   {{
+     "main": "Main Heading of the query.. create it in a professional way"
+   }},
+   {{
+     "title": "title ..create it by your own",
+     "keywords": ["1-3 word title for each content"],
+     "Content": ["content and the number of these lines should be equal to keywords count that is each keyword contains a para or a line for say"],
+     "Emojis": ["emojis different ones for each keyword"],
+     "Conclusion": "conclusion of the whole thing.."
+   }},
+   {{
+     "title": "title ..create it by your own",
+     "keywords": ["1-3 word title for each content"],
+     "Content": ["content and the number of these lines should be equal to keywords count that is each keyword contains a para or a line for say"],
+     "Emojis": ["emojis different ones for each keyword"],
+     "Conclusion": "conclusion of the whole thing.."
+   }},
+   ...and goes on.. create a minimum of 6 like these.. can be more but never be less
+   {{
+     "rltdq": ["related questions list that can strike user mind"] 
    }}
-   and more datablocks like this ..
- 'conclusion': write the conclusion of whole article here
+ }}
+
+ OK, so this was the format. Now a sample example for the query "Amazon vs Flipkart":
+
+ {{
+   {{
+     "main": "Amazon Vs Flipkart: \n The Ultimate Comparison"
+   }},
+   {{
+     "title": "Amazon",
+     "keywords": ["Founder", "Headquarters", "Shipping", "Payment Methods", "Customer ratings", "Trust Score"],
+     "Content": [
+       "Founder of Amazon is Jeff Bezos, born and other etc details...",
+       "Headquarters of Amazon are located here... and more things about it",
+       ...all others like this
+     ],
+     "Emojis": ["different emoji for each keyword"],
+     "Conclusion": "conclusion for all that"
+    }},
+   same for Flipkart now... then other things like which is better in which category... in short, write everything about the query so the user doesn't need to go to some other place to search for that query.
+ }}
+
+ Remember that I'm using it as an API in my Flask app, so always give a response in JSON format, and the keyword count should be equal to content lines should be equal to the number of emojis... so that each keyword gets a content line and an emoji... OK?
+ These titles should be a minimum of 4 and can be more but not try exceeding 4. Create more if needed... use your knowledge also to create the best response and don't write anything except the JSON response...
+ This is a important note remember each keyword should have 1 content line and a emoji...keyword count == content lines == emoji count..and remeber 1 content line means a line written in double quotes ...
 }}
 
-Let me give you a detailed example of the response. For the query Amazon vs Flipkart:
-
-{{
-  'heading' : 'Amazon vs Flipkart : The Ultimate Comparison '
-  {{
-   'title': 'Amazon'
-   'content': [
-                '👔 Founder - The founder of Amazon is Jeff Bezos'
-                '🏢 Headquarters - '
-                '💰Payment Methods - '
-                '🚚 Shipping Methods - '
-                '💯 Trust Score - '
-                '⭐ Customer Ratings - '
- .....and more like these
-                     ]
-   'source': ['wikipedia.com/amazon',...and more ]
-   }}
-   and more datablocks like this ..
-   'conclusion': 'amazon is much better than Flipkart and all that ..a detailed conclusion '
-}}
-Here are the set of content from sources :
+This is a important note remember each keyword should have 1 content line and a emoji...keyword count == content lines == emoji count..and remeber 1 content line means a line written in double quotes ...and return all data in json format ..dont write anything else 
+Please cite the contexts with the reference numbers, in the format [citation:x]. If a sentence comes from multiple contexts, please list all applicable citations, like [citation:3][citation:5]. Other than code and specific names and citations, your answer must be written in the same language as the question. If there are too many citations, choose the best of them.
+Dont write anything except this json form, it should not seem to user that this is a ai generated response ...
+Here are the set of contexts:
 
 {{context}}
 
-here is the user question:
+Remember, don't blindly repeat the contexts. And here is the user question:
 """
 
 
 # A set of stop words to use - this is not a complete set, and you may want to
 # add more given your observation.
+stop_words = [
+    "<|im_end|>",
+    "[End]",
+    "[end]",
+    "\nReferences:\n",
+    "\nSources:\n",
+    "End.",
+]
 
+_more_questions_prompt = """
+You are a helpful assistant that helps the user to ask related questions, based on user's original question and the related contexts. Please identify worthwhile topics that can be follow-ups, and write questions no longer than 20 words each. Please make sure that specifics, like events, names, locations, are included in follow up questions so they can be asked standalone. For example, if the original question asks about "the Manhattan project", in the follow up question, do not just say "the project", but use the full name "the Manhattan project". The format of giving the responses and generating the questions shoudld be like this:
 
-# _more_questions_prompt = """
-# You are a helpful assistant that helps the user to ask related questions, based on user's original question and the related contexts. Please identify worthwhile topics that can be follow-ups, and write questions no longer than 20 words each. Please make sure that specifics, like events, names, locations, are included in follow up questions so they can be asked standalone. For example, if the original question asks about "the Manhattan project", in the follow up question, do not just say "the project", but use the full name "the Manhattan project". The format of giving the responses and generating the questions shoudld be like this:
-# 
-# 1. [Question 1]
-# 2. [Question 2] 
-# 3. [Question 3]
-#
-# Here are the contexts of the question:
+1. [Question 1]
+2. [Question 2] 
+3. [Question 3]
 
-# {context}
+Here are the contexts of the question:
 
-# Remember, based on the original question and related contexts, suggest three such further questions. Do NOT repeat the original question. Each related question should be no longer than 20 words. Here is the original question:
-# """
+{context}
+
+Remember, based on the original question and related contexts, suggest three such further questions. Do NOT repeat the original question. Each related question should be no longer than 20 words. Here is the original question:
+"""
 
 
 def search_with_serper(query: str, subscription_key=SERPER_API, prints=False):
@@ -249,17 +282,40 @@ class AI():
         complete_response = ''.join(chunks)
 
         return complete_response
-      
+    
+
+def get_related_questions(query, contexts):
+        
+        system_prompt = _more_questions_prompt.format(
+                            context="\n\n".join([c["snippet"] for c in contexts])
+                        )
+
+        try:
+            # complete_response = AI.Lepton(system_prompt, query.)
+            # complete_response = AI.DeepSeek(system_prompt, query)
+            complete_response = AI.Groq(system_prompt, query)
+            return complete_response
+        
+        except Exception as e:
+            print(e)
+            # For any exceptions, we will just return an empty list.
+            return []
+        
 
 def generate_answer(query, contexts):
 
     # Basic attack protection: remove "[INST]" or "[/INST]" from the query
     query = re.sub(r"\[/?INST\]", "", query)
 
-    system_prompt = _rag_query_text
+    system_prompt = _rag_query_text.format(
+                context="\n\n".join(
+                    [f"[[citation:{i+1}]] {c['snippet']}" for i, c in enumerate(contexts)]
+                )
+            )
 
     try:
-        # complete_response = AI.Lpt, query)
+        # complete_response = AI.Lepton(system_prompt, query)
+        # complete_response = AI.DeepSeek(system_prompt, query)
         complete_response = AI.Groq(system_prompt, query)
         return complete_response
 
