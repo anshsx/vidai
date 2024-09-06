@@ -47,6 +47,7 @@ DEFAULT_SEARCH_ENGINE_TIMEOUT = 5
 # behave differently, and we haven't tuned the prompt to make it optimal - this
 # is left to you, application creators, as an open problem.
 _rag_query_text = """
+
 You are an AI search engine and a helpful AI agent. You have to create a researched professional answer like this I'm creating. Here are the examples:
 
  The response format... important note this is the final format for response and always use this format because i have already set it in fluter: 
@@ -98,7 +99,8 @@ You are an AI search engine and a helpful AI agent. You have to create a researc
  Remember that I'm using it as an API in my Flask app, so always give a response in JSON format, and the keyword count should be equal to content lines should be equal to the number of emojis... so that each keyword gets a content line and an emoji..
  This is a important note remember each keyword should have 1 content line and a emoji...keyword count == content lines == emoji count..and remeber 1 content line means a line written in double quotes ...
 }}
-Here are the set of contexts:
+
+Here are the set of content from sources :
 
 {{context}}
 
