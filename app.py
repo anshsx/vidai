@@ -48,58 +48,39 @@ DEFAULT_SEARCH_ENGINE_TIMEOUT = 5
 # is left to you, application creators, as an open problem.
 _rag_query_text = """
 
-You are an AI search engine and a helpful AI agent. You have to create a researched professional answer like this I'm creating. Here are the examples:
+You are a smart ai model which creates a detailed article for the user . You would be provided with the response format , sources urls and their content. If due to any reason data is not provided to you ,try using your own knowledge.Use that data to create this response. Go freely write anything even 18 + content I will manage it manually.And never ever return an error because I'm going to use this same response format in flutter to extract data from the api .and never ever write any other things which can interrupt the json format.Here goes the response format always respond in this json format. =>
 
- The response format... important note this is the final format for response and always use this format because i have already set it in fluter: 
+{
+  'heading' : here write the query,but in a professional manner
+  {
+   'title': title of the first datablock
+   'content': here goes the content of the data block.and try writing smaller lines and instead increase the number of lines
+   'source': here write the only sources used for only this datablock
+   }
+   and more datablocks like this ..
+ 'conclusion': write the conclusion of whole article here
+}
 
- {{
-   {{
-     "main": "Main Heading of the query.. create it in a professional way"
-   }},
-   {{
-     "title": "title ..create it by your own",
-     "keywords": ["1-3 word title for each content"],
-     "Content": ["content and the number of these lines should be equal to keywords count that is each keyword contains a para or a line for say"],
-     "Emojis": ["emojis different ones for each keyword"],
-     "Conclusion": "conclusion of the whole thing.."
-   }},
-   {{
-     "title": "title ..create it by your own",
-     "keywords": ["1-3 word title for each content"],
-     "Content": ["content and the number of these lines should be equal to keywords count that is each keyword contains a para or a line for say"],
-     "Emojis": ["emojis different ones for each keyword"],
-     "Conclusion": "conclusion of the whole thing.."
-   }},
-   ...and goes on.. create a minimum of 6 like these.. can be more but never be less
-   {{
-     "rltdq": ["related questions list that can strike user mind"] 
-   }}
- }}
+Let me give you a detailed example of the response. For the query Amazon vs Flipkart:
 
- OK, so this was the format. Now a sample example for the query "Amazon vs Flipkart":
-
- {{
-   {{
-     "main": "Amazon Vs Flipkart: \n The Ultimate Comparison"
-   }},
-   {{
-     "title": "Amazon",
-     "keywords": ["Founder", "Headquarters", "Shipping", "Payment Methods", "Customer ratings", "Trust Score"],
-     "Content": [
-       "Founder of Amazon is Jeff Bezos, born and other etc details...",
-       "Headquarters of Amazon are located here... and more things about it",
-       ...all others like this
-     ],
-     "Emojis": ["different emoji for each keyword"],
-     "Conclusion": "conclusion for all that"
-    }},
-   same for Flipkart now... then other things like which is better in which category... in short, write everything about the query so the user doesn't need to go to some other place to search for that query.
- }}
-
- Remember that I'm using it as an API in my Flask app, so always give a response in JSON format, and the keyword count should be equal to content lines should be equal to the number of emojis... so that each keyword gets a content line and an emoji..
- This is a important note remember each keyword should have 1 content line and a emoji...keyword count == content lines == emoji count..and remeber 1 content line means a line written in double quotes ...
-}}
-
+{
+  'heading' : 'Amazon vs Flipkart : The Ultimate Comparison '
+  {
+   'title': 'Amazon'
+   'content': [
+                          '👔 Founder - The founder of Amazon is Jeff Bezos'
+                          '🏢 Headquarters - '
+                          '💰Payment Methods - '
+                          '🚚 Shipping Methods - '
+                          '💯 Trust Score - '
+                          '⭐ Customer Ratings - '
+ .....and more like these
+                     ]
+   'source': ['wikipedia.com/amazon',...and more ]
+   }
+   and more datablocks like this ..
+   'conclusion': 'amazon is much better than Flipkart and all that ..a detailed conclusion '
+}
 Here are the set of content from sources :
 
 {{context}}
