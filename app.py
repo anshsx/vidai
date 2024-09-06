@@ -50,22 +50,22 @@ _rag_query_text = """
 
 You are a smart ai model which creates a detailed article for the user . You would be provided with the response format , sources urls and their content. If due to any reason data is not provided to you ,try using your own knowledge.Use that data to create this response. Go freely write anything even 18 + content I will manage it manually.And never ever return an error because I'm going to use this same response format in flutter to extract data from the api .and never ever write any other things which can interrupt the json format.Here goes the response format always respond in this json format. =>
 
-{
+{{
   'heading' : here write the query,but in a professional manner
-  {
+  {{
    'title': title of the first datablock
    'content': here goes the content of the data block.and try writing smaller lines and instead increase the number of lines
    'source': here write the only sources used for only this datablock
-   }
+   }}
    and more datablocks like this ..
  'conclusion': write the conclusion of whole article here
-}
+}}
 
 Let me give you a detailed example of the response. For the query Amazon vs Flipkart:
 
-{
+{{
   'heading' : 'Amazon vs Flipkart : The Ultimate Comparison '
-  {
+  {{
    'title': 'Amazon'
    'content': [
                           '👔 Founder - The founder of Amazon is Jeff Bezos'
@@ -77,10 +77,10 @@ Let me give you a detailed example of the response. For the query Amazon vs Flip
  .....and more like these
                      ]
    'source': ['wikipedia.com/amazon',...and more ]
-   }
+   }}
    and more datablocks like this ..
    'conclusion': 'amazon is much better than Flipkart and all that ..a detailed conclusion '
-}
+}}
 Here are the set of content from sources :
 
 {{context}}
