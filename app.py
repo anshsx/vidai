@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, send_file
-import cv2
+from PIL import Image
+from io import BytesIO
 import numpy as np
 import requests
 import base64
@@ -9,12 +10,21 @@ from moviepy.video.fx.all import resize  # Correct import for resize effect
 
 app = Flask(__name__)
 
-# Function to download the image from the URL
+# Function to download the image from the U
+
+
 def download_image(url):
+    # Download the image from the URL
     response = requests.get(url)
-    img_array = np.asarray(bytearray(response.content), dtype=np.uint8)
-    img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-    return img
+    
+    # Ensure the request was successful
+    if response.status_code == 200:
+        # Convert the response content to a byte stream
+        img = Image.open(BytesIO(response.content))
+        return img
+    else:
+        print("Failed to download image. Status code:", response.status_code)
+        return None
 
 # Function to create audio from text using Speechify API
 def speak(paragraph: str, voice_name: str = "mrbeast", filename: str = "output_audio.mp3"):
