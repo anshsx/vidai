@@ -1,30 +1,20 @@
 from flask import Flask, request, jsonify, send_file
-from PIL import Image
-from io import BytesIO
 import numpy as np
 import requests
 import base64
 import os
 from moviepy.editor import ImageClip, concatenate_videoclips, AudioFileClip
-from moviepy.video.fx.all import resize  # Correct import for resize effect
+from moviepy.video.fx.all import resize
+from PIL import Image
+import io
 
 app = Flask(__name__)
 
-# Function to download the image from the U
-
-
+# Function to download the image from the URL
 def download_image(url):
-    # Download the image from the URL
     response = requests.get(url)
-    
-    # Ensure the request was successful
-    if response.status_code == 200:
-        # Convert the response content to a byte stream
-        img = Image.open(BytesIO(response.content))
-        return img
-    else:
-        print("Failed to download image. Status code:", response.status_code)
-        return None
+    img = Image.open(io.BytesIO(response.content))
+    return img
 
 # Function to create audio from text using Speechify API
 def speak(paragraph: str, voice_name: str = "mrbeast", filename: str = "output_audio.mp3"):
@@ -64,7 +54,7 @@ def create_video(scenes, voice_name="mrbeast"):
 
         # Save the image temporarily for MoviePy to load
         img_path = f"temp_image_{idx}.png"
-        
+        img.save(img_path)
 
         # Create an audio file from the content text using Speechify
         audio_file = f"audio_{idx}.mp3"
