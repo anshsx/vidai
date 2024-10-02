@@ -64,7 +64,7 @@ def create_video(scenes, voice_name="mrbeast"):
 
         # Save the image temporarily for MoviePy to load
         img_path = f"temp_image_{idx}.png"
-        cv2.imwrite(img_path, img)
+        
 
         # Create an audio file from the content text using Speechify
         audio_file = f"audio_{idx}.mp3"
