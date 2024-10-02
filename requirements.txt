@@ -1,5 +1,5 @@
-Flask==2.3.2
-numpy==1.23.5
-requests==2.31.0
-Pillow==9.5.0
-moviepy==1.0.3
+Flask
+numpy
+requests
+moviepy
+Pillow==9.4.0  # Downgrade to a version that supports Image.ANTIALIAS
