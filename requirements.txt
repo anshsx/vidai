@@ -1,5 +1,5 @@
 Flask
 numpy
 requests
-moviepy
+moviepy==1.0.3
 Pillow==9.4.0  # Downgrade to a version that supports Image.ANTIALIAS
