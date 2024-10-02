@@ -3,6 +3,7 @@ import numpy as np
 import requests
 import base64
 import os
+import tempfile
 from moviepy.editor import ImageClip, concatenate_videoclips, AudioFileClip
 from moviepy.video.fx.all import resize
 from PIL import Image
@@ -13,14 +14,12 @@ app = Flask(__name__)
 # Function to download the image from the URL
 def download_image(url):
     response = requests.get(url)
+    response.raise_for_status()  # Raise an error for bad responses
     img = Image.open(io.BytesIO(response.content))
     return img
 
 # Function to create audio from text using Speechify API
-def speak(paragraph: str, voice_name: str = "mrbeast", filename: str = "output_audio.mp3"):
-    try: os.remove(filename)
-    except: pass
-
+def speak(paragraph: str, voice_name: str = "mrbeast"):
     url = "https://audio.api.speechify.com/generateAudioFiles"
     payload = {
         "audioFormat": "mp3",
@@ -31,13 +30,11 @@ def speak(paragraph: str, voice_name: str = "mrbeast", filename: str = "output_a
             "languageCode": "en-US"
         }
     }
-
     response = requests.post(url, json=payload)
-    response.raise_for_status()
-    
+    response.raise_for_status()  # Raise an error for bad responses
+
     audio_data = base64.b64decode(response.json()['audioStream'])
-    with open(filename, 'wb') as audio_file:
-        audio_file.write(audio_data)
+    return audio_data
 
 # Function to add a slight zoom-in effect to an image clip
 def apply_zoom_effect(clip, zoom_factor=1.05):
@@ -53,18 +50,22 @@ def create_video(scenes, voice_name="mrbeast"):
         img = download_image(img_url)
 
         # Save the image temporarily for MoviePy to load
-        img_path = f"temp_image_{idx}.png"
-        img.save(img_path)
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as img_file:
+            img.save(img_file.name)
+            img_path = img_file.name
 
         # Create an audio file from the content text using Speechify
-        audio_file = f"audio_{idx}.mp3"
-        speak(scene['contentText'], voice_name, audio_file)
+        audio_data = speak(scene['contentText'], voice_name)
+        
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as audio_file:
+            audio_file.write(audio_data)
+            audio_file_path = audio_file.name
 
         # Create an ImageClip from the saved image and set its duration
         img_clip = ImageClip(img_path)
         
         # Load the audio clip
-        audio_clip = AudioFileClip(audio_file)
+        audio_clip = AudioFileClip(audio_file_path)
         
         # Set the image clip duration to the length of the audio clip
         img_clip = img_clip.set_duration(audio_clip.duration)
@@ -86,10 +87,11 @@ def create_video(scenes, voice_name="mrbeast"):
     final_video.write_videofile(final_video_path, fps=24)
 
     # Clean up temporary files
-    for idx in range(len(scenes)):
-        os.remove(f"temp_image_{idx}.png")
-        os.remove(f"audio_{idx}.mp3")
-    
+    for img_clip in video_clips:
+        img_clip.reader.close()  # Close the image clip reader to free resources
+    os.remove(img_path)
+    os.remove(audio_file_path)
+
     return final_video_path
 
 @app.route('/generate_video', methods=['POST'])
