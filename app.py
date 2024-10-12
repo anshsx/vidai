@@ -1,3 +1,4 @@
+# app.py
 from flask import Flask, request, jsonify, send_file
 import numpy as np
 import requests
@@ -8,6 +9,7 @@ from moviepy.editor import ImageClip, concatenate_videoclips, AudioFileClip
 from moviepy.video.fx.all import resize
 from PIL import Image
 import io
+import re
 
 app = Flask(__name__)
 
@@ -43,7 +45,7 @@ def apply_zoom_effect(clip, zoom_factor=1.05):
 # Main function to create the video
 def create_video(scenes, voice_name="mrbeast"):
     video_clips = []
-    
+
     for idx, scene in enumerate(scenes):
         # Download image
         img_url = f"https://image.pollinations.ai/prompt/{scene['imagePrompt']}?width=1080&height=1920"
@@ -56,17 +58,17 @@ def create_video(scenes, voice_name="mrbeast"):
 
         # Create an audio file from the content text using Speechify
         audio_data = speak(scene['contentText'], voice_name)
-        
+
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as audio_file:
             audio_file.write(audio_data)
             audio_file_path = audio_file.name
 
         # Create an ImageClip from the saved image and set its duration
         img_clip = ImageClip(img_path)
-        
+
         # Load the audio clip
         audio_clip = AudioFileClip(audio_file_path)
-        
+
         # Set the image clip duration to the length of the audio clip
         img_clip = img_clip.set_duration(audio_clip.duration)
 
